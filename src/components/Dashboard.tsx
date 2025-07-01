@@ -9,7 +9,8 @@ import {
   Target,
   CreditCard,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  RefreshCw
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, BarChart, Bar } from 'recharts';
 import { DatabaseService } from '../lib/database';
@@ -80,6 +81,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     metas: []
   });
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [timeRange, setTimeRange] = useState('month'); // month, quarter, year
 
   useEffect(() => {
@@ -89,15 +91,18 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   // Recarregar dados a cada 30 segundos para manter sincronizado
   useEffect(() => {
     const interval = setInterval(() => {
-      loadDashboardData();
+      loadDashboardData(true); // Silent refresh
     }, 30000);
 
     return () => clearInterval(interval);
   }, [timeRange]);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) {
+        setLoading(true);
+      }
+      setRefreshing(true);
       
       // Calcular datas baseado no período selecionado
       const hoje = new Date();
@@ -128,7 +133,18 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       console.error('Erro ao carregar dados do dashboard:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const handleQuickAction = (action: string) => {
+    if (onNavigate) {
+      onNavigate(action);
+    }
+  };
+
+  const handleManualRefresh = () => {
+    loadDashboardData();
   };
 
   const resumoFinanceiro = useMemo(() => {
@@ -202,12 +218,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
-  const handleQuickAction = (action: string) => {
-    if (onNavigate) {
-      onNavigate(action);
-    }
-  };
-
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -219,12 +229,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         
         <div className="flex items-center space-x-3">
           <button
-            onClick={loadDashboardData}
-            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-            disabled={loading}
+            onClick={handleManualRefresh}
+            disabled={refreshing}
+            className="flex items-center space-x-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
           >
-            {loading ? 'Atualizando...' : 'Atualizar'}
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <span>{refreshing ? 'Atualizando...' : 'Atualizar'}</span>
           </button>
+          
           <select
             value={timeRange}
             onChange={(e) => setTimeRange(e.target.value)}

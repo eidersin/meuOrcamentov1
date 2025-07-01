@@ -1,17 +1,44 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Edit3, Trash2, CreditCard, TrendingUp, TrendingDown } from 'lucide-react';
-import { useBudgetStore } from '../lib/store';
+import { DatabaseService } from '../lib/database';
 import { formatCurrency } from '../lib/utils';
 
 export function Contas() {
-  const { contas, adicionarConta, editarConta, removerConta, lancamentos } = useBudgetStore();
+  const [contas, setContas] = useState<any[]>([]);
+  const [lancamentos, setLancamentos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingConta, setEditingConta] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     nome: '',
-    saldoInicial: '',
+    tipo: 'CORRENTE' as 'CORRENTE' | 'POUPANCA' | 'INVESTIMENTO' | 'CARTEIRA' | 'CARTAO_CREDITO',
+    saldo_inicial: '',
+    banco: '',
+    agencia: '',
+    conta: '',
+    cor: '#10B981',
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [contasData, lancamentosData] = await Promise.all([
+        DatabaseService.getContas(),
+        DatabaseService.getLancamentos()
+      ]);
+      setContas(contasData);
+      setLancamentos(lancamentosData);
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const validateForm = () => {
     const errors: Record<string, string> = {};
@@ -20,94 +47,121 @@ export function Contas() {
       errors.nome = 'Nome da conta é obrigatório';
     }
     
-    const saldoInicial = parseFloat(formData.saldoInicial);
-    if (formData.saldoInicial && isNaN(saldoInicial)) {
-      errors.saldoInicial = 'Saldo inicial deve ser um número válido';
+    const saldoInicial = parseFloat(formData.saldo_inicial);
+    if (formData.saldo_inicial && isNaN(saldoInicial)) {
+      errors.saldo_inicial = 'Saldo inicial deve ser um número válido';
     }
     
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!validateForm()) {
       return;
     }
 
-    const saldoInicial = parseFloat(formData.saldoInicial) || 0;
+    try {
+      const contaData = {
+        nome: formData.nome.trim(),
+        tipo: formData.tipo,
+        saldo_inicial: parseFloat(formData.saldo_inicial) || 0,
+        banco: formData.banco || null,
+        agencia: formData.agencia || null,
+        conta: formData.conta || null,
+        cor: formData.cor,
+      };
 
-    if (editingConta) {
-      editarConta(editingConta, {
-        nome: formData.nome.trim(),
-        saldoInicial: saldoInicial,
-      });
-    } else {
-      adicionarConta({
-        nome: formData.nome.trim(),
-        saldoInicial: saldoInicial,
-      });
+      if (editingConta) {
+        await DatabaseService.updateConta(editingConta, contaData);
+      } else {
+        await DatabaseService.createConta(contaData);
+      }
+
+      await loadData();
+      resetForm();
+    } catch (error) {
+      console.error('Erro ao salvar conta:', error);
+      alert('Erro ao salvar conta');
     }
-
-    // Reset form
-    setFormData({ nome: '', saldoInicial: '' });
-    setFormErrors({});
-    setShowForm(false);
-    setEditingConta(null);
   };
 
   const handleEdit = (conta: any) => {
     setEditingConta(conta.id);
     setFormData({
       nome: conta.nome,
-      saldoInicial: conta.saldoInicial.toString(),
+      tipo: conta.tipo,
+      saldo_inicial: conta.saldo_inicial.toString(),
+      banco: conta.banco || '',
+      agencia: conta.agencia || '',
+      conta: conta.conta || '',
+      cor: conta.cor,
     });
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
-    const hasTransactions = lancamentos.some(l => l.contaId === id);
+  const handleDelete = async (id: string) => {
+    const hasTransactions = lancamentos.some(l => l.conta_id === id);
     if (hasTransactions) {
       alert('Não é possível excluir uma conta que possui lançamentos vinculados.');
       return;
     }
     
     if (confirm('Tem certeza que deseja excluir esta conta?')) {
-      removerConta(id);
+      try {
+        await DatabaseService.deleteConta(id);
+        await loadData();
+      } catch (error) {
+        console.error('Erro ao excluir conta:', error);
+        alert('Erro ao excluir conta');
+      }
     }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      nome: '',
+      tipo: 'CORRENTE',
+      saldo_inicial: '',
+      banco: '',
+      agencia: '',
+      conta: '',
+      cor: '#10B981',
+    });
+    setFormErrors({});
+    setShowForm(false);
+    setEditingConta(null);
   };
 
   const contasComCalculos = useMemo(() => {
     return contas.map(conta => {
-      const transacoesConta = lancamentos.filter(l => l.contaId === conta.id);
-      const totalTransacoes = transacoesConta.reduce((sum, l) => {
-        return sum + (l.tipo === 'RECEITA' ? l.valor : -l.valor);
-      }, 0);
-      const saldoAtual = conta.saldoInicial + totalTransacoes;
+      const transacoesConta = lancamentos.filter(l => l.conta_id === conta.id);
       
       const receitasTotal = transacoesConta
-        .filter(l => l.tipo === 'RECEITA')
+        .filter(l => l.tipo === 'RECEITA' && l.status === 'CONFIRMADO')
         .reduce((sum, l) => sum + l.valor, 0);
       
       const despesasTotal = transacoesConta
-        .filter(l => l.tipo === 'DESPESA')
+        .filter(l => l.tipo === 'DESPESA' && l.status === 'CONFIRMADO')
         .reduce((sum, l) => sum + l.valor, 0);
+      
+      const movimentacao = receitasTotal - despesasTotal;
       
       return {
         ...conta,
-        saldoAtual,
         transacoesCount: transacoesConta.length,
         receitasTotal,
         despesasTotal,
-        movimentacao: totalTransacoes
+        movimentacao
       };
     });
   }, [contas, lancamentos]);
 
   const resumoGeral = useMemo(() => {
-    const saldoTotalInicial = contas.reduce((sum, conta) => sum + conta.saldoInicial, 0);
-    const saldoTotalAtual = contasComCalculos.reduce((sum, conta) => sum + conta.saldoAtual, 0);
+    const saldoTotalInicial = contas.reduce((sum, conta) => sum + conta.saldo_inicial, 0);
+    const saldoTotalAtual = contas.reduce((sum, conta) => sum + conta.saldo_atual, 0);
     const totalReceitas = contasComCalculos.reduce((sum, conta) => sum + conta.receitasTotal, 0);
     const totalDespesas = contasComCalculos.reduce((sum, conta) => sum + conta.despesasTotal, 0);
     
@@ -119,6 +173,14 @@ export function Contas() {
       variacao: saldoTotalAtual - saldoTotalInicial
     };
   }, [contas, contasComCalculos]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -167,7 +229,7 @@ export function Contas() {
       {/* Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-gray-900">
                 {editingConta ? 'Editar Conta' : 'Nova Conta'}
@@ -195,35 +257,85 @@ export function Contas() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tipo da Conta *
+                </label>
+                <select
+                  value={formData.tipo}
+                  onChange={(e) => setFormData(prev => ({ ...prev, tipo: e.target.value as any }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="CORRENTE">Conta Corrente</option>
+                  <option value="POUPANCA">Poupança</option>
+                  <option value="INVESTIMENTO">Investimento</option>
+                  <option value="CARTEIRA">Carteira</option>
+                  <option value="CARTAO_CREDITO">Cartão de Crédito</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Saldo Inicial
                 </label>
                 <input
                   type="number"
                   step="0.01"
-                  value={formData.saldoInicial}
-                  onChange={(e) => setFormData(prev => ({ ...prev, saldoInicial: e.target.value }))}
+                  value={formData.saldo_inicial}
+                  onChange={(e) => setFormData(prev => ({ ...prev, saldo_inicial: e.target.value }))}
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                    formErrors.saldoInicial ? 'border-red-300' : 'border-gray-300'
+                    formErrors.saldo_inicial ? 'border-red-300' : 'border-gray-300'
                   }`}
                   placeholder="0,00"
                 />
-                {formErrors.saldoInicial && (
-                  <p className="text-red-600 text-sm mt-1">{formErrors.saldoInicial}</p>
+                {formErrors.saldo_inicial && (
+                  <p className="text-red-600 text-sm mt-1">{formErrors.saldo_inicial}</p>
                 )}
-                <p className="text-sm text-gray-500 mt-1">
-                  Deixe em branco ou zero se não souber o saldo inicial
-                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Banco
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.banco}
+                    onChange={(e) => setFormData(prev => ({ ...prev, banco: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Ex: Banco do Brasil"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Agência
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.agencia}
+                    onChange={(e) => setFormData(prev => ({ ...prev, agencia: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="0000"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Número da Conta
+                </label>
+                <input
+                  type="text"
+                  value={formData.conta}
+                  onChange={(e) => setFormData(prev => ({ ...prev, conta: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="00000-0"
+                />
               </div>
 
               <div className="flex space-x-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowForm(false);
-                    setEditingConta(null);
-                    setFormData({ nome: '', saldoInicial: '' });
-                    setFormErrors({});
-                  }}
+                  onClick={resetForm}
                   className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                 >
                   Cancelar
@@ -254,12 +366,15 @@ export function Contas() {
                   <div key={conta.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-all duration-200 group">
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center space-x-3">
-                        <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
-                          <CreditCard className="w-6 h-6 text-blue-600" />
+                        <div 
+                          className="w-12 h-12 rounded-lg flex items-center justify-center"
+                          style={{ backgroundColor: conta.cor + '20' }}
+                        >
+                          <CreditCard className="w-6 h-6" style={{ color: conta.cor }} />
                         </div>
                         <div>
                           <h3 className="font-semibold text-gray-900">{conta.nome}</h3>
-                          <p className="text-sm text-gray-500">{conta.transacoesCount} transações</p>
+                          <p className="text-sm text-gray-500">{conta.tipo} • {conta.transacoesCount} transações</p>
                         </div>
                       </div>
                       
@@ -282,15 +397,15 @@ export function Contas() {
                     <div className="space-y-3">
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">Saldo Inicial:</span>
-                        <span className="text-sm font-medium">{formatCurrency(conta.saldoInicial)}</span>
+                        <span className="text-sm font-medium">{formatCurrency(conta.saldo_inicial)}</span>
                       </div>
                       
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">Saldo Atual:</span>
                         <span className={`text-lg font-bold ${
-                          conta.saldoAtual >= 0 ? 'text-green-600' : 'text-red-600'
+                          conta.saldo_atual >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {formatCurrency(conta.saldoAtual)}
+                          {formatCurrency(conta.saldo_atual)}
                         </span>
                       </div>
                       
@@ -316,15 +431,9 @@ export function Contas() {
                         </div>
                       </div>
                       
-                      {conta.movimentacao !== 0 && (
-                        <div className="pt-2">
-                          <div className={`text-center text-sm font-medium px-3 py-1 rounded-full ${
-                            conta.movimentacao >= 0 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-red-100 text-red-800'
-                          }`}>
-                            {conta.movimentacao >= 0 ? '+' : ''}{formatCurrency(conta.movimentacao)} de movimentação
-                          </div>
+                      {conta.banco && (
+                        <div className="pt-2 text-xs text-gray-500">
+                          {conta.banco} {conta.agencia && `• Ag: ${conta.agencia}`} {conta.conta && `• Cc: ${conta.conta}`}
                         </div>
                       )}
                     </div>

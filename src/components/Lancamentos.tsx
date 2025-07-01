@@ -1,10 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Edit3, Trash2, Calendar, DollarSign, Search, Filter, X } from 'lucide-react';
-import { useBudgetStore } from '../lib/store';
+import { DatabaseService } from '../lib/database';
 import { formatCurrency, formatDate, createParcelaLancamentos } from '../lib/utils';
 
 export function Lancamentos() {
-  const { lancamentos, categorias, contas, adicionarLancamento, removerLancamento } = useBudgetStore();
+  const [lancamentos, setLancamentos] = useState<any[]>([]);
+  const [categorias, setCategorias] = useState<any[]>([]);
+  const [contas, setContas] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -20,12 +23,35 @@ export function Lancamentos() {
     valor: '',
     data: new Date().toISOString().split('T')[0],
     tipo: 'DESPESA' as 'RECEITA' | 'DESPESA',
-    contaId: '',
-    categoriaId: '',
+    conta_id: '',
+    categoria_id: '',
+    observacoes: '',
     isParcelado: false,
     numeroParcelas: 2,
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [lancamentosData, categoriasData, contasData] = await Promise.all([
+        DatabaseService.getLancamentos(),
+        DatabaseService.getCategorias(),
+        DatabaseService.getContas()
+      ]);
+      setLancamentos(lancamentosData);
+      setCategorias(categoriasData);
+      setContas(contasData);
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const validateForm = () => {
     const errors: Record<string, string> = {};
@@ -39,12 +65,12 @@ export function Lancamentos() {
       errors.valor = 'Valor deve ser maior que zero';
     }
     
-    if (!formData.contaId) {
-      errors.contaId = 'Selecione uma conta';
+    if (!formData.conta_id) {
+      errors.conta_id = 'Selecione uma conta';
     }
     
-    if (!formData.categoriaId) {
-      errors.categoriaId = 'Selecione uma categoria';
+    if (!formData.categoria_id) {
+      errors.categoria_id = 'Selecione uma categoria';
     }
     
     if (formData.isParcelado && (formData.numeroParcelas < 2 || formData.numeroParcelas > 24)) {
@@ -55,49 +81,68 @@ export function Lancamentos() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!validateForm()) {
       return;
     }
 
-    const valor = parseFloat(formData.valor);
-    const dadosBase = {
-      descricao: formData.descricao.trim(),
-      valor: valor,
-      data: formData.data,
-      tipo: formData.tipo,
-      contaId: formData.contaId,
-      categoriaId: formData.categoriaId,
-    };
+    try {
+      const valor = parseFloat(formData.valor);
+      const dadosBase = {
+        descricao: formData.descricao.trim(),
+        valor: valor,
+        data: formData.data,
+        tipo: formData.tipo,
+        conta_id: formData.conta_id,
+        categoria_id: formData.categoria_id,
+        observacoes: formData.observacoes || null,
+      };
 
-    if (formData.isParcelado && formData.numeroParcelas > 1) {
-      const parcelas = createParcelaLancamentos(dadosBase, formData.numeroParcelas);
-      parcelas.forEach(parcela => adicionarLancamento(parcela));
-    } else {
-      adicionarLancamento(dadosBase);
+      if (formData.isParcelado && formData.numeroParcelas > 1) {
+        const parcelas = createParcelaLancamentos(dadosBase, formData.numeroParcelas);
+        for (const parcela of parcelas) {
+          await DatabaseService.createLancamento(parcela);
+        }
+      } else {
+        await DatabaseService.createLancamento(dadosBase);
+      }
+
+      await loadData();
+      resetForm();
+    } catch (error) {
+      console.error('Erro ao salvar lançamento:', error);
+      alert('Erro ao salvar lançamento');
     }
+  };
 
-    // Reset form
+  const handleDelete = async (id: string) => {
+    if (confirm('Tem certeza que deseja excluir este lançamento?')) {
+      try {
+        await DatabaseService.deleteLancamento(id);
+        await loadData();
+      } catch (error) {
+        console.error('Erro ao excluir lançamento:', error);
+        alert('Erro ao excluir lançamento');
+      }
+    }
+  };
+
+  const resetForm = () => {
     setFormData({
       descricao: '',
       valor: '',
       data: new Date().toISOString().split('T')[0],
       tipo: 'DESPESA',
-      contaId: '',
-      categoriaId: '',
+      conta_id: '',
+      categoria_id: '',
+      observacoes: '',
       isParcelado: false,
       numeroParcelas: 2,
     });
     setFormErrors({});
     setShowForm(false);
-  };
-
-  const handleDelete = (id: string) => {
-    if (confirm('Tem certeza que deseja excluir este lançamento?')) {
-      removerLancamento(id);
-    }
   };
 
   const clearFilters = () => {
@@ -128,12 +173,12 @@ export function Lancamentos() {
 
     // Filtro por categoria
     if (filters.categoriaId) {
-      resultado = resultado.filter(l => l.categoriaId === filters.categoriaId);
+      resultado = resultado.filter(l => l.categoria_id === filters.categoriaId);
     }
 
     // Filtro por conta
     if (filters.contaId) {
-      resultado = resultado.filter(l => l.contaId === filters.contaId);
+      resultado = resultado.filter(l => l.conta_id === filters.contaId);
     }
 
     // Filtro por período
@@ -149,6 +194,14 @@ export function Lancamentos() {
 
   const categoriasFiltered = categorias.filter(c => c.tipo === formData.tipo);
   const hasActiveFilters = filters.tipo !== 'TODOS' || filters.categoriaId || filters.contaId || filters.dataInicio || filters.dataFim || searchTerm;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -353,7 +406,7 @@ export function Lancamentos() {
                   onChange={(e) => setFormData(prev => ({ 
                     ...prev, 
                     tipo: e.target.value as 'RECEITA' | 'DESPESA',
-                    categoriaId: '' // Reset categoria quando muda o tipo
+                    categoria_id: '' // Reset categoria quando muda o tipo
                   }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
@@ -367,10 +420,10 @@ export function Lancamentos() {
                   Categoria *
                 </label>
                 <select
-                  value={formData.categoriaId}
-                  onChange={(e) => setFormData(prev => ({ ...prev, categoriaId: e.target.value }))}
+                  value={formData.categoria_id}
+                  onChange={(e) => setFormData(prev => ({ ...prev, categoria_id: e.target.value }))}
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                    formErrors.categoriaId ? 'border-red-300' : 'border-gray-300'
+                    formErrors.categoria_id ? 'border-red-300' : 'border-gray-300'
                   }`}
                 >
                   <option value="">Selecione uma categoria</option>
@@ -380,8 +433,8 @@ export function Lancamentos() {
                     </option>
                   ))}
                 </select>
-                {formErrors.categoriaId && (
-                  <p className="text-red-600 text-sm mt-1">{formErrors.categoriaId}</p>
+                {formErrors.categoria_id && (
+                  <p className="text-red-600 text-sm mt-1">{formErrors.categoria_id}</p>
                 )}
               </div>
 
@@ -390,10 +443,10 @@ export function Lancamentos() {
                   Conta *
                 </label>
                 <select
-                  value={formData.contaId}
-                  onChange={(e) => setFormData(prev => ({ ...prev, contaId: e.target.value }))}
+                  value={formData.conta_id}
+                  onChange={(e) => setFormData(prev => ({ ...prev, conta_id: e.target.value }))}
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                    formErrors.contaId ? 'border-red-300' : 'border-gray-300'
+                    formErrors.conta_id ? 'border-red-300' : 'border-gray-300'
                   }`}
                 >
                   <option value="">Selecione uma conta</option>
@@ -403,9 +456,22 @@ export function Lancamentos() {
                     </option>
                   ))}
                 </select>
-                {formErrors.contaId && (
-                  <p className="text-red-600 text-sm mt-1">{formErrors.contaId}</p>
+                {formErrors.conta_id && (
+                  <p className="text-red-600 text-sm mt-1">{formErrors.conta_id}</p>
                 )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Observações
+                </label>
+                <textarea
+                  value={formData.observacoes}
+                  onChange={(e) => setFormData(prev => ({ ...prev, observacoes: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Observações opcionais..."
+                  rows={3}
+                />
               </div>
 
               {formData.tipo === 'DESPESA' && (
@@ -452,10 +518,7 @@ export function Lancamentos() {
               <div className="flex space-x-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowForm(false);
-                    setFormErrors({});
-                  }}
+                  onClick={resetForm}
                   className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                 >
                   Cancelar
@@ -489,8 +552,8 @@ export function Lancamentos() {
           {lancamentosFiltrados.length > 0 ? (
             <div className="space-y-3">
               {lancamentosFiltrados.map((lancamento) => {
-                const categoria = categorias.find(c => c.id === lancamento.categoriaId);
-                const conta = contas.find(c => c.id === lancamento.contaId);
+                const categoria = categorias.find(c => c.id === lancamento.categoria_id);
+                const conta = contas.find(c => c.id === lancamento.conta_id);
                 
                 return (
                   <div key={lancamento.id} className="flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg transition-colors group">
@@ -518,9 +581,14 @@ export function Lancamentos() {
                           <span>•</span>
                           <span className="truncate">{conta?.nome}</span>
                         </div>
-                        {lancamento.totalParcelas && (
+                        {lancamento.total_parcelas && (
                           <div className="text-xs text-blue-600 mt-1">
-                            Parcela {lancamento.parcelaAtual}/{lancamento.totalParcelas}
+                            Parcela {lancamento.parcela_atual}/{lancamento.total_parcelas}
+                          </div>
+                        )}
+                        {lancamento.observacoes && (
+                          <div className="text-xs text-gray-400 mt-1 truncate">
+                            {lancamento.observacoes}
                           </div>
                         )}
                       </div>
