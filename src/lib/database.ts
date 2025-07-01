@@ -122,7 +122,7 @@ export class DatabaseService {
       .select(`
         *,
         categoria:categorias(nome, cor, icone),
-        conta:contas(nome, tipo)
+        conta:contas!lancamentos_conta_id_fkey(nome, tipo)
       `)
       .order('data', { ascending: false });
 
