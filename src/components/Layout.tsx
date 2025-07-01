@@ -44,7 +44,7 @@ export function Layout({ children, currentPage, onPageChange, user }: LayoutProp
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div 
@@ -55,12 +55,12 @@ export function Layout({ children, currentPage, onPageChange, user }: LayoutProp
 
       {/* Sidebar */}
       <div className={`
-        fixed inset-y-0 left-0 z-50 w-72 bg-white shadow-xl transform transition-transform duration-300 ease-in-out
+        fixed inset-y-0 left-0 z-50 w-72 bg-white shadow-xl transform transition-transform duration-300 ease-in-out flex flex-col
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         lg:translate-x-0 lg:static lg:inset-0
       `}>
         {/* Sidebar Header */}
-        <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-purple-600">
+        <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-purple-600 flex-shrink-0">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
               <DollarSign className="w-6 h-6 text-white" />
@@ -79,7 +79,7 @@ export function Layout({ children, currentPage, onPageChange, user }: LayoutProp
         </div>
 
         {/* User Profile */}
-        <div className="p-6 border-b border-gray-200 bg-gradient-to-b from-gray-50 to-white">
+        <div className="p-6 border-b border-gray-200 bg-gradient-to-b from-gray-50 to-white flex-shrink-0">
           <div className="flex items-center space-x-3">
             <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
               <User className="w-6 h-6 text-white" />
@@ -97,7 +97,7 @@ export function Layout({ children, currentPage, onPageChange, user }: LayoutProp
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-6">
+        <nav className="flex-1 px-4 py-6 overflow-y-auto">
           <div className="space-y-2">
             {menuItems.map((item) => {
               const Icon = item.icon;
@@ -132,7 +132,7 @@ export function Layout({ children, currentPage, onPageChange, user }: LayoutProp
         </nav>
 
         {/* Sidebar Footer */}
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-gray-200 flex-shrink-0">
           <button
             onClick={handleSignOut}
             className="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200"
@@ -150,10 +150,10 @@ export function Layout({ children, currentPage, onPageChange, user }: LayoutProp
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="lg:pl-72">
+      {/* Main content area */}
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar for mobile */}
-        <div className="lg:hidden flex items-center justify-between h-16 px-4 bg-white border-b border-gray-200 shadow-sm">
+        <div className="lg:hidden flex items-center justify-between h-16 px-4 bg-white border-b border-gray-200 shadow-sm flex-shrink-0">
           <button
             onClick={() => setSidebarOpen(true)}
             className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
@@ -172,7 +172,7 @@ export function Layout({ children, currentPage, onPageChange, user }: LayoutProp
         </div>
 
         {/* Page content */}
-        <main className="p-6 lg:p-8">
+        <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
           <div className="max-w-7xl mx-auto">
             {children}
           </div>
