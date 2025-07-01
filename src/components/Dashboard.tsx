@@ -22,6 +22,10 @@ interface DashboardData {
   metas: any[];
 }
 
+interface DashboardProps {
+  onNavigate?: (page: string) => void;
+}
+
 function StatCard({ title, value, icon: Icon, trend, color, subtitle, loading = false }: any) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-lg transition-all duration-300">
@@ -53,7 +57,7 @@ function QuickActionCard({ title, description, icon: Icon, color, onClick }: any
   return (
     <button
       onClick={onClick}
-      className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-lg transition-all duration-300 text-left group"
+      className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-lg transition-all duration-300 text-left group w-full"
     >
       <div className="flex items-center space-x-4">
         <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${color}`}>
@@ -68,7 +72,7 @@ function QuickActionCard({ title, description, icon: Icon, color, onClick }: any
   );
 }
 
-export function Dashboard() {
+export function Dashboard({ onNavigate }: DashboardProps) {
   const [data, setData] = useState<DashboardData>({
     lancamentos: [],
     categorias: [],
@@ -80,6 +84,15 @@ export function Dashboard() {
 
   useEffect(() => {
     loadDashboardData();
+  }, [timeRange]);
+
+  // Recarregar dados a cada 30 segundos para manter sincronizado
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadDashboardData();
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, [timeRange]);
 
   const loadDashboardData = async () => {
@@ -189,6 +202,12 @@ export function Dashboard() {
     }
   };
 
+  const handleQuickAction = (action: string) => {
+    if (onNavigate) {
+      onNavigate(action);
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -199,6 +218,13 @@ export function Dashboard() {
         </div>
         
         <div className="flex items-center space-x-3">
+          <button
+            onClick={loadDashboardData}
+            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+            disabled={loading}
+          >
+            {loading ? 'Atualizando...' : 'Atualizar'}
+          </button>
           <select
             value={timeRange}
             onChange={(e) => setTimeRange(e.target.value)}
@@ -266,28 +292,28 @@ export function Dashboard() {
             description="Adicionar receita ou despesa"
             icon={DollarSign}
             color="bg-blue-600"
-            onClick={() => {/* Navigate to lancamentos */}}
+            onClick={() => handleQuickAction('lancamentos')}
           />
           <QuickActionCard
             title="Nova Meta"
             description="Definir objetivo financeiro"
             icon={Target}
             color="bg-green-600"
-            onClick={() => {/* Navigate to metas */}}
+            onClick={() => handleQuickAction('metas')}
           />
           <QuickActionCard
             title="Nova Conta"
             description="Adicionar conta bancária"
             icon={CreditCard}
             color="bg-purple-600"
-            onClick={() => {/* Navigate to contas */}}
+            onClick={() => handleQuickAction('contas')}
           />
           <QuickActionCard
-            title="Relatórios"
-            description="Ver análises detalhadas"
+            title="Nova Categoria"
+            description="Organizar transações"
             icon={BarChart3}
             color="bg-orange-600"
-            onClick={() => {/* Navigate to relatorios */}}
+            onClick={() => handleQuickAction('categorias')}
           />
         </div>
       </div>
@@ -524,7 +550,10 @@ export function Dashboard() {
               
               {data.contas.length > 5 && (
                 <div className="text-center pt-2">
-                  <button className="text-sm text-blue-600 hover:text-blue-700">
+                  <button 
+                    onClick={() => handleQuickAction('contas')}
+                    className="text-sm text-blue-600 hover:text-blue-700"
+                  >
                     Ver todas as contas ({data.contas.length})
                   </button>
                 </div>
